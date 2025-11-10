@@ -3,7 +3,7 @@ var express = require('express');
 var app = express();
 var bodyParser = require('body-parser');
 
-var LISTEN_PORT = 3010;
+var LISTEN_PORT = 80;
 var DEFAULT_TABS = [
   {
     name: 'Basic Scale',
