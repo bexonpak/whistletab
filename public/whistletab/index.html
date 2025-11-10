@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>WhistleTab (Vercel)</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;margin:20px}
+    textarea{width:100%;height:200px}
+    .tab-item{border:1px solid #ddd;padding:8px;margin-bottom:8px}
+    .controls{margin:12px 0}
+  </style>
+</head>
+<body>
+  <h1>WhistleTab (Vercel build)</h1>
+  <p>这是一个静态前端 + serverless API 的版本。Server 保存需要在 Vercel 的环境变量中设置 SECRET 才会启用（否则会使用 localStorage）。</p>
+
+  <div class="controls">
+    <label>Optional server secret (用于向 server 保存)：</label>
+    <input id="secretInput" placeholder="secret (optional)"/>
+    <button id="refreshBtn">刷新 tabs</button>
+    <button id="saveBtn">保存当前 tabs</button>
+  </div>
+
+  <div id="tabsList"></div>
+
+  <h2>编辑 tab 列表 JSON</h2>
+  <textarea id="tabsEditor"></textarea>
+
+  <script>
+    const tabsEditor = document.getElementById('tabsEditor');
+    const tabsList = document.getElementById('tabsList');
+    const secretInput = document.getElementById('secretInput');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const saveBtn = document.getElementById('saveBtn');
+
+    function renderList(tabs){
+      tabsList.innerHTML = '';
+      tabs.forEach((t, i) => {
+        const el = document.createElement('div');
+        el.className = 'tab-item';
+        el.innerHTML = '<strong>' + (t.name || ('Tab ' + (i+1))) + '</strong>'
+          + '<pre>' + (t.tab || '') + '</pre>'
+          + '<div>readOnly: ' + !!t.readOnly + '</div>';
+        tabsList.appendChild(el);
+      });
+    }
+
+    function loadFromServer(){
+      return fetch('/api/tabs')
+        .then(r => { if(!r.ok) throw new Error('network'); return r.json(); })
+        .catch(err => {
+          // couldn't load from server, fallback to localStorage
+          const local = localStorage.getItem('whistletab-tabs');
+          if (local) return JSON.parse(local);
+          return null;
+        });
+    }
+
+    function refresh(){
+      loadFromServer().then(data => {
+        const tabs = data || [{name:'Basic Scale',tab:'def#gabc#',readOnly:true}];
+        renderList(tabs);
+        tabsEditor.value = JSON.stringify(tabs, null, 2);
+      });
+    }
+
+    refreshBtn.addEventListener('click', refresh);
+
+    saveBtn.addEventListener('click', () => {
+      let payload;
+      try {
+        payload = JSON.parse(tabsEditor.value);
+      } catch (e) {
+        alert('JSON 解析错误: ' + e.message);
+        return;
+      }
+
+      const secret = secretInput.value.trim();
+      if (!secret) {
+        // no secret => save to localStorage only
+        localStorage.setItem('whistletab-tabs', JSON.stringify(payload));
+        alert('已保存到 localStorage（本地浏览器）');
+        renderList(payload);
+        return;
+      }
+
+      // try server save
+      fetch('/api/tabs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Secret': secret
+        },
+        body: JSON.stringify(payload)
+      }).then(r => {
+        if (r.status === 204) {
+          alert('已保存到服务器（注意：serverless 环境上的文件写入可能并不持久）');
+        } else if (r.status === 403) {
+          alert('Secret 不匹配，保存失败（403）');
+        } else {
+          return r.text().then(text => { throw new Error(text || r.statusText); });
+        }
+        // also update local view & localStorage
+        localStorage.setItem('whistletab-tabs', JSON.stringify(payload));
+        renderList(payload);
+      }).catch(err => {
+        alert('保存到服务器失败，已保存到本地：' + (err && err.message));
+        localStorage.setItem('whistletab-tabs', JSON.stringify(payload));
+        renderList(payload);
+      });
+    });
+
+    // initial load
+    refresh();
+  </script>
+</body>
+</html>
